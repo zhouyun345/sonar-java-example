@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MyMissingBeanValidationCheck.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">SonarQube Java :: Documentation :: Custom Rules Example</a> &gt; <a href="index.source.html" class="el_package">org.sonar.samples.java.checks</a> &gt; <span class="el_source">MyMissingBeanValidationCheck.java</span></div><h1>MyMissingBeanValidationCheck.java</h1><pre class="source lang-java linenums">/*
+ * SonarQube Java
+ * Copyright (C) 2012-2023 SonarSource SA
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+package org.sonar.samples.java.checks;
+
+import java.text.MessageFormat;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
+import org.sonar.check.Rule;
+import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.SymbolMetadata;
+import org.sonar.plugins.java.api.semantic.SymbolMetadata.AnnotationInstance;
+import org.sonar.plugins.java.api.semantic.Type;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.ParameterizedTypeTree;
+import org.sonar.plugins.java.api.tree.Tree;
+import org.sonar.plugins.java.api.tree.Tree.Kind;
+import org.sonar.plugins.java.api.tree.TypeTree;
+import org.sonar.plugins.java.api.tree.VariableTree;
+
+@Rule(key = &quot;CUSTOM5128&quot;)
+<span class="fc" id="L43">public class MyMissingBeanValidationCheck extends IssuableSubscriptionVisitor {</span>
+
+  private static final String JAVAX_VALIDATION_VALID = &quot;javax.validation.Valid&quot;;
+  private static final String SPRING_VALIDATION_VALIDATED = &quot;org.springframework.validation.annotation.Validated&quot;;
+
+  private static final String JAVAX_VALIDATION_CONSTRAINT = &quot;javax.validation.Constraint&quot;;
+
+  private static final String SPRING_CONTROLLER = &quot;org.springframework.stereotype.Controller&quot;;
+  private static final String SPRING_REQUEST_MAPPING = &quot;org.springframework.web.bind.annotation.RequestMapping&quot;;
+
+  @Override
+  public List&lt;Tree.Kind&gt; nodesToVisit() {
+<span class="fc" id="L55">    return Collections.singletonList(Kind.METHOD);</span>
+  }
+
+  @Override
+  public void visitNode(Tree tree) {
+<span class="fc" id="L60">    MethodTree methodTree = (MethodTree) tree;</span>
+    // 只校验controller接口方法参数变量
+<span class="fc bfc" id="L62" title="All 2 branches covered.">    if (isControllerMethod(methodTree)) {</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">      for (VariableTree parameter : methodTree.parameters()) {</span>
+<span class="fc" id="L64">        checkField(parameter);</span>
+        // 校验方法参数变量类中的所有字段
+<span class="fc" id="L66">        parameter.type().symbolType().symbol().memberSymbols().forEach(e -&gt; {</span>
+<span class="pc bpc" id="L67" title="1 of 4 branches missed.">          if (e.declaration() != null &amp;&amp; e.isVariableSymbol()) {</span>
+<span class="fc" id="L68">            checkField((VariableTree) e.declaration());</span>
+          }
+<span class="fc" id="L70">        });</span>
+<span class="fc" id="L71">      }</span>
+    }
+<span class="fc" id="L73">  }</span>
+
+  private void checkField(VariableTree field) {
+<span class="fc" id="L76">    getIssueMessage(field).ifPresent(message -&gt; reportIssue(field.type(), message));</span>
+<span class="fc" id="L77">  }</span>
+
+  private static boolean isControllerMethod(MethodTree methodTree) {
+<span class="fc" id="L80">    SymbolMetadata parentClassOwner = methodTree.symbol().owner().metadata();</span>
+<span class="fc" id="L81">    final List&lt;AnnotationInstance&gt; classAnnotations = parentClassOwner.annotations();</span>
+<span class="fc" id="L82">    final List&lt;AnnotationInstance&gt; methodAnnotations = methodTree.symbol().metadata().annotations();</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">    return classAnnotations.stream().anyMatch(MyMissingBeanValidationCheck::isControllerAnnotation)</span>
+<span class="pc bpc" id="L84" title="1 of 2 branches missed.">      &amp;&amp; methodAnnotations.stream().anyMatch(MyMissingBeanValidationCheck::isRequestMappingAnnotation);</span>
+  }
+
+  private static Optional&lt;String&gt; getIssueMessage(VariableTree variable) {
+<span class="fc bfc" id="L88" title="All 4 branches covered.">    if (!validationEnabled(variable) &amp;&amp; validationSupported(variable)) {</span>
+<span class="fc" id="L89">      return Optional.of(</span>
+<span class="fc" id="L90">        MessageFormat.format(&quot;Add missing \&quot;@Valid\&quot; on \&quot;{0}\&quot; to validate it with \&quot;Bean Validation\&quot;.&quot;,</span>
+<span class="fc" id="L91">          variable.simpleName()));</span>
+    }
+<span class="fc" id="L93">    return Optional.empty();</span>
+  }
+
+  private static boolean validationEnabled(VariableTree variable) {
+<span class="fc bfc" id="L97" title="All 2 branches covered.">    if (variable.symbol().metadata().isAnnotatedWith(JAVAX_VALIDATION_VALID)</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">      || variable.symbol().metadata().isAnnotatedWith(SPRING_VALIDATION_VALIDATED)) {</span>
+<span class="fc" id="L99">      return true;</span>
+    }
+<span class="fc" id="L101">    return typeArgumentAnnotations(variable).anyMatch(annotation -&gt;</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">      annotation.is(JAVAX_VALIDATION_VALID)</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        || annotation.is(SPRING_VALIDATION_VALIDATED));</span>
+  }
+
+  private static Stream&lt;Type&gt; typeArgumentAnnotations(VariableTree variable) {
+<span class="fc" id="L107">    return typeArgumentTypeTrees(variable).flatMap(type -&gt; type.annotations().stream()).map(ExpressionTree::symbolType);</span>
+  }
+
+  private static Stream&lt;TypeTree&gt; typeArgumentTypeTrees(VariableTree variable) {
+<span class="fc" id="L111">    TypeTree variableType = variable.type();</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">    if (!variableType.is(Tree.Kind.PARAMETERIZED_TYPE)) {</span>
+<span class="fc" id="L113">      return Stream.empty();</span>
+    }
+<span class="fc" id="L115">    return ((ParameterizedTypeTree) variableType).typeArguments().stream();</span>
+  }
+
+  private static boolean validationSupported(VariableTree variable) {
+<span class="fc" id="L119">    final Stream&lt;AnnotationInstance&gt; annotationInstanceStream = annotationInstances(variable);</span>
+<span class="fc" id="L120">    return annotationInstanceStream.anyMatch(MyMissingBeanValidationCheck::isConstraintAnnotation);</span>
+  }
+
+  private static Stream&lt;SymbolMetadata.AnnotationInstance&gt; annotationInstances(VariableTree variable) {
+<span class="fc bfc" id="L124" title="All 2 branches covered.">    if (variable.type().is(Tree.Kind.PARAMETERIZED_TYPE)) {</span>
+<span class="fc" id="L125">      return typeArgumentAnnotationInstances(variable);</span>
+    }
+<span class="fc" id="L127">    Symbol.TypeSymbol classSymbol = variable.symbol().type().symbol();</span>
+<span class="fc" id="L128">    return classAndFieldAnnotationInstances(classSymbol);</span>
+  }
+
+  private static Stream&lt;SymbolMetadata.AnnotationInstance&gt; typeArgumentAnnotationInstances(VariableTree variable) {
+<span class="fc" id="L132">    return typeArgumentTypeTrees(variable).map(TypeTree::symbolType).map(Type::symbol)</span>
+<span class="fc" id="L133">      .flatMap(MyMissingBeanValidationCheck::classAndFieldAnnotationInstances);</span>
+  }
+
+  private static Stream&lt;SymbolMetadata.AnnotationInstance&gt; classAndFieldAnnotationInstances(
+    Symbol.TypeSymbol classSymbol) {
+<span class="fc" id="L138">    return Stream.concat(classAnnotationInstances(classSymbol), fieldAnnotationInstances(classSymbol));</span>
+  }
+
+  private static Stream&lt;SymbolMetadata.AnnotationInstance&gt; classAnnotationInstances(Symbol classSymbol) {
+<span class="fc" id="L142">    final List&lt;AnnotationInstance&gt; annotations = classSymbol.metadata().annotations();</span>
+<span class="fc" id="L143">    return annotations.stream();</span>
+  }
+
+  private static Stream&lt;SymbolMetadata.AnnotationInstance&gt; fieldAnnotationInstances(Symbol.TypeSymbol classSymbol) {
+<span class="fc" id="L147">    final Collection&lt;Symbol&gt; symbols = classSymbol.memberSymbols();</span>
+<span class="fc" id="L148">    return symbols.stream().flatMap(MyMissingBeanValidationCheck::classAnnotationInstances);</span>
+  }
+
+  private static boolean isConstraintAnnotation(SymbolMetadata.AnnotationInstance annotationInstance) {
+<span class="fc" id="L152">    return annotationInstance.symbol().metadata().isAnnotatedWith(JAVAX_VALIDATION_CONSTRAINT);</span>
+  }
+
+  private static boolean isRequestMappingAnnotation(SymbolMetadata.AnnotationInstance annotationInstance) {
+<span class="fc" id="L156">    return annotationInstance.symbol().metadata().isAnnotatedWith(SPRING_REQUEST_MAPPING);</span>
+  }
+
+  private static boolean isControllerAnnotation(SymbolMetadata.AnnotationInstance annotationInstance) {
+<span class="fc" id="L160">    return annotationInstance.symbol().metadata().isAnnotatedWith(SPRING_CONTROLLER);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.10.202304240956</span></div></body></html>
